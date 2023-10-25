@@ -1,6 +1,7 @@
 #ifndef PPU_H
 #define PPU_H
 #include <stdint.h>
+#include "mapper.h"
 
 typedef struct {
 	uint8_t vramaddr_increment;
@@ -30,6 +31,7 @@ typedef enum {
 
 typedef struct {
 
+	uint8_t rendering;
 	// ppu registers
 	uint8_t ctrl;
 	uint8_t mask;
@@ -47,6 +49,28 @@ typedef struct {
 	uint8_t write_toggle;
 	uint8_t buffer;
 
+	// internal stuff
+	uint16_t nt_tile_address;
+	uint8_t tile_index;
+	uint16_t attribute_address;
+	uint8_t attribute;
+	uint16_t pattern_low_address;
+	uint16_t pattern_high_address;
+
+	// shifters
+
+	uint16_t low_tile_shift;
+	uint16_t high_tile_shift;
+	uint8_t low_palette_shift;
+	uint8_t high_palette_shift;
+	uint8_t low_palette_latch;
+	uint8_t high_plaette_latch;
+	uint8_t tile_cycle;
+
+	//
+	uint8_t pattern_low;
+	uint8_t pattern_high;
+
 	// ppu flags
 	ppu_flags *flags;
 
@@ -54,8 +78,7 @@ typedef struct {
 	render_states render_state;
 
 
-	uint8_t chr_rom[0x2000];
-	uint8_t vram[0x800];
+	struct mapper *mapper;
 	uint8_t palettes[0x20];
 	uint8_t OAM[0x100];
 	uint8_t secondary_OAM[0x20];
@@ -64,10 +87,17 @@ typedef struct {
 
 }ppu2C02;
 
-uint8_t read_vram(ppu2C02 *ppu, uint16_t addr);
-uint8_t read_nametable(ppu2C02 *ppu, uint16_t addr);
+uint8_t get_fine_y(ppu2C02 *ppu);
+uint8_t get_coarse_y(ppu2C02 *ppu);
+uint8_t get_fine_x(ppu2C02 *ppu);
+uint8_t get_coarse_x(ppu2C02 *ppu);
+
+void coarse_x_increment(ppu2C02 *ppu);
+void fine_y_increment(ppu2C02 *ppu);
+
 uint8_t read_palette(ppu2C02 *ppu, uint16_t addr);
 void increment_vram(ppu2C02 *ppu);
+uint8_t read_ppu(ppu2C02 *ppu, uint16_t addr);
 
 void set_ppuctrl(ppu2C02 *ppu, uint8_t data);
 void set_ppumask(ppu2C02 *ppu, uint8_t data);
@@ -80,6 +110,8 @@ void set_ppuaddr(ppu2C02 *ppu, uint8_t data);
 uint8_t get_ppudata(ppu2C02 *ppu);
 void set_ppudata(ppu2C02 *ppu, uint8_t data); 
 
+void get_bg_tiles(ppu2C02 *ppu);
+void initialize_ppu(ppu2C02 *ppu);
 
 
 

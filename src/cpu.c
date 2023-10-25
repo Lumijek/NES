@@ -26,12 +26,52 @@ struct Instruction instructionLookup[256] =
 // HALF THESE INSTRUCTIONS COULD PROBABLY BE ABSTRACTED AWAY
 // WITH FUNCTIONS BUT I WANTED THE OPCODES TO BE AS EXPLICIT
 // AS POSSIBLE
-uint16_t read_mem(cpu6502 *cpu, uint16_t addr) {
-	return cpu->memory[addr];
+uint8_t read_ppuflags(cpu6502 *cpu, uint16_t addr) {
+	return 0;
 }
 
-void write_mem(cpu6502 *cpu, uint16_t addr, uint8_t data) {
-	cpu->memory[addr] = data;
+uint8_t read_apuflags(cpu6502 *cpu, uint16_t addr) {
+	return 0;
+}
+
+void write_ppuflags(cpu6502 *cpu, uint16_t addr, uint8_t data) {
+	;
+}
+
+void write_apuflags(cpu6502 *cpu, uint16_t addr, uint8_t data) {
+	;
+}
+
+uint8_t read_cpu(cpu6502 *cpu, uint16_t addr) {
+	if(addr < 0x2000) {
+		addr = addr & 0x07FF;
+		return cpu->internal_ram[addr];
+	}
+	else if(addr < 0x4000) {
+		return read_ppuflags(cpu, addr);
+	}
+	else if(addr < 0x4020) {
+		return read_apuflags(cpu, addr);
+	}
+	else {
+		return mapper_read_cpu(cpu->mapper, addr);
+	}
+}
+
+void write_cpu(cpu6502 *cpu, uint16_t addr, uint8_t data) {
+	if(addr < 0x2000) {
+		addr = addr & 0x07FF;
+		cpu->internal_ram[addr] = data;
+	}
+	else if(addr < 0x4000) {
+		write_ppuflags(cpu, addr, data);
+	}
+	else if(addr < 0x4020) {
+		write_apuflags(cpu, addr, data);
+	}
+	else {
+		mapper_write_cpu(cpu->mapper, addr, data);
+	}
 }
 
 void setFlag(cpu6502 *cpu, ProcessorStatus f, bool b) {
@@ -58,39 +98,39 @@ uint8_t IMM(cpu6502 *cpu) {
 }
 
 uint8_t ZPG(cpu6502 *cpu) {
-	cpu->addr = read_mem(cpu, cpu->pc++) & 0x00FF;
+	cpu->addr = read_cpu(cpu, cpu->pc++) & 0x00FF;
 	return 0;
 }
 
 uint8_t ZPX(cpu6502 *cpu) {
-	cpu->addr = read_mem(cpu, cpu->pc++);
+	cpu->addr = read_cpu(cpu, cpu->pc++);
 	cpu->addr = (cpu->addr + cpu->x) & 0x00FF;
 	return 0;
 }
 
 uint8_t ZPY(cpu6502 *cpu) {
-	cpu->addr = read_mem(cpu, cpu->pc++);
+	cpu->addr = read_cpu(cpu, cpu->pc++);
 	cpu->addr = (cpu->addr + cpu->y) & 0x00FF;
 	return 0;
 }
 
 uint8_t REL(cpu6502 *cpu) {
-	cpu->addr = read_mem(cpu, cpu->pc++);
+	cpu->addr = read_cpu(cpu, cpu->pc++);
 	if(cpu->addr & 0x80) // if number is negative in 2's complement
 		cpu->addr |= 0xFF00; //add 8 1 bits to keep it negative in 2's complement in 2 bytes
 	return 0;
 }
 
 uint8_t ABS(cpu6502 *cpu) {
-	int16_t lo = read_mem(cpu, cpu->pc++);
-	int16_t hi = read_mem(cpu, cpu->pc++);
+	int16_t lo = read_cpu(cpu, cpu->pc++);
+	int16_t hi = read_cpu(cpu, cpu->pc++);
 	cpu->addr = (hi << 8) | lo;
 	return 0;
 }
 
 uint8_t ABX(cpu6502 *cpu) {
-	int16_t lo = read_mem(cpu, cpu->pc++);
-	int16_t hi = read_mem(cpu, cpu->pc++);
+	int16_t lo = read_cpu(cpu, cpu->pc++);
+	int16_t hi = read_cpu(cpu, cpu->pc++);
 	cpu->addr = ((hi << 8) | lo) + cpu->x;
 	if ((cpu->addr & 0xFF00) != (hi << 8))
 		cpu->cycles++;
@@ -98,8 +138,8 @@ uint8_t ABX(cpu6502 *cpu) {
 }
 
 uint8_t ABY(cpu6502 *cpu) {
-	int16_t lo = read_mem(cpu, cpu->pc++);
-	int16_t hi = read_mem(cpu, cpu->pc++);
+	int16_t lo = read_cpu(cpu, cpu->pc++);
+	int16_t hi = read_cpu(cpu, cpu->pc++);
 	cpu->addr = ((hi << 8) | lo) + cpu->y;
 	if ((cpu->addr & 0xFF00) != (hi << 8))
 		cpu->cycles++;
@@ -107,29 +147,29 @@ uint8_t ABY(cpu6502 *cpu) {
 }
 
 uint8_t IND(cpu6502 *cpu) {
-	int16_t lo = read_mem(cpu, cpu->pc++);
-	int16_t hi = read_mem(cpu, cpu->pc++);
+	int16_t lo = read_cpu(cpu, cpu->pc++);
+	int16_t hi = read_cpu(cpu, cpu->pc++);
 	int16_t pointer = (hi << 8) | lo;
 
 	if(lo == 0x00FF) {
-		cpu->addr = (read_mem(cpu, pointer & 0xFF00) << 8) | read_mem(cpu, pointer);
+		cpu->addr = (read_cpu(cpu, pointer & 0xFF00) << 8) | read_cpu(cpu, pointer);
 	}
 	else {
-		cpu->addr = (read_mem(cpu, pointer + 1) << 8) | read_mem(cpu, pointer);
+		cpu->addr = (read_cpu(cpu, pointer + 1) << 8) | read_cpu(cpu, pointer);
 	}
 	return 0;
 }
 
 uint8_t IDX(cpu6502 *cpu) {
-	uint16_t temp_addr = (read_mem(cpu, cpu->pc++) + cpu->x) & 0x00FF;
-	cpu->addr = (read_mem(cpu, (temp_addr + 1) & 0x00FF) << 8) | read_mem(cpu, temp_addr);
+	uint16_t temp_addr = (read_cpu(cpu, cpu->pc++) + cpu->x) & 0x00FF;
+	cpu->addr = (read_cpu(cpu, (temp_addr + 1) & 0x00FF) << 8) | read_cpu(cpu, temp_addr);
 	return 0;
 }
 
 uint8_t IDY(cpu6502 *cpu) {
-	uint16_t temp_addr = read_mem(cpu, cpu->pc++);
-	uint16_t lo = read_mem(cpu, temp_addr);
-	uint16_t hi = read_mem(cpu, (temp_addr + 1) & 0x00FF);
+	uint16_t temp_addr = read_cpu(cpu, cpu->pc++);
+	uint16_t lo = read_cpu(cpu, temp_addr);
+	uint16_t hi = read_cpu(cpu, (temp_addr + 1) & 0x00FF);
 	cpu->addr = ((hi << 8) | lo) + cpu->y;
 	if ((cpu->addr & 0xFF00) != (hi << 8))
 		cpu->cycles++;
@@ -139,33 +179,33 @@ uint8_t IDY(cpu6502 *cpu) {
 
 // Load/Store Operations
 void LDA(cpu6502 *cpu) {
-	cpu->a = read_mem(cpu, cpu->addr);
+	cpu->a = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, cpu->a == 0x00);
 	setFlag(cpu, N, cpu->a & 0x80);
 }
 
 void LDX(cpu6502 *cpu) {
-	cpu->x = read_mem(cpu, cpu->addr);
+	cpu->x = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, cpu->x == 0x00);
 	setFlag(cpu, N, cpu->x & 0x80);
 }
 
 void LDY(cpu6502 *cpu) {
-	cpu->y = read_mem(cpu, cpu->addr);
+	cpu->y = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, cpu->y == 0x00);
 	setFlag(cpu, N, cpu->y & 0x80);
 }
 
 void STA(cpu6502 *cpu) {
-	write_mem(cpu, cpu->addr, cpu->a);
+	write_cpu(cpu, cpu->addr, cpu->a);
 }
 
 void STX(cpu6502 *cpu) {
-	write_mem(cpu, cpu->addr, cpu->x);
+	write_cpu(cpu, cpu->addr, cpu->x);
 }
 
 void STY(cpu6502 *cpu) {
-	write_mem(cpu, cpu->addr, cpu->y);
+	write_cpu(cpu, cpu->addr, cpu->y);
 }
 
 // Register Transfers
@@ -207,51 +247,51 @@ void TXS(cpu6502 *cpu) {
 }
 
 void PHA(cpu6502 *cpu) {
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->a);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->a);
 }
 
 void PHP(cpu6502 *cpu) {
 	setFlag(cpu, U, 1);
 	setFlag(cpu, B, 1);
 
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->sr);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->sr);
 
 	setFlag(cpu, B, 0); // Hardware bugs
 }
 
 void PLA(cpu6502 *cpu) {
-	cpu->a = read_mem(cpu, STACK_START + ++cpu->sp);
+	cpu->a = read_cpu(cpu, STACK_START + ++cpu->sp);
 	setFlag(cpu, Z, cpu->a == 0x00);
 	setFlag(cpu, N, cpu->a & 0x80);
 }
 
 void PLP(cpu6502 *cpu) {
-	cpu->sr = read_mem(cpu, STACK_START + ++cpu->sp);
+	cpu->sr = read_cpu(cpu, STACK_START + ++cpu->sp);
 	setFlag(cpu, U, 1);
 	setFlag(cpu, B, 0);
 }
 
 // Logical
 void AND(cpu6502 *cpu) {
-	cpu->a &= read_mem(cpu, cpu->addr);
+	cpu->a &= read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, cpu->a == 0x00);
 	setFlag(cpu, N, cpu->a & 0x80);
 }
 
 void EOR(cpu6502 *cpu) {
-	cpu->a ^= read_mem(cpu, cpu->addr);
+	cpu->a ^= read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, cpu->a == 0x00);
 	setFlag(cpu, N, cpu->a & 0x80);
 }
 
 void ORA(cpu6502 *cpu) {
-	cpu->a |= read_mem(cpu, cpu->addr);
+	cpu->a |= read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, cpu->a == 0x00);
 	setFlag(cpu, N, cpu->a & 0x80);
 }
 
 void BIT(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr);
+	uint8_t mem = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, Z, (mem & cpu->a) == 0x00);
 	setFlag(cpu, V, mem & (1 << 6));
 	setFlag(cpu, N, mem & (1 << 7));
@@ -259,7 +299,7 @@ void BIT(cpu6502 *cpu) {
 
 // Arithmetic
 void ADC(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr);
+	uint8_t mem = read_cpu(cpu, cpu->addr);
 	uint16_t temp = cpu->a + mem + getFlag(cpu, C);
 
 	setFlag(cpu, C, temp > 255);
@@ -273,7 +313,7 @@ void ADC(cpu6502 *cpu) {
 }
 
 void SBC(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr);
+	uint8_t mem = read_cpu(cpu, cpu->addr);
 	mem = mem ^ 0xFF;
 	uint16_t temp = cpu->a + mem + getFlag(cpu, C);
 
@@ -287,7 +327,7 @@ void SBC(cpu6502 *cpu) {
 }
 
 void CMP(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr);
+	uint8_t mem = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, C, cpu->a >= mem);
 	setFlag(cpu, Z, cpu->a == mem);
 	setFlag(cpu, N, (cpu->a - mem) & 0x80);
@@ -295,7 +335,7 @@ void CMP(cpu6502 *cpu) {
 }
 
 void CPX(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr);
+	uint8_t mem = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, C, cpu->x >= mem);
 	setFlag(cpu, Z, cpu->x == mem);
 	setFlag(cpu, N, (cpu->x - mem) & 0x80);
@@ -303,7 +343,7 @@ void CPX(cpu6502 *cpu) {
 }
 
 void CPY(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr);
+	uint8_t mem = read_cpu(cpu, cpu->addr);
 	setFlag(cpu, C, cpu->y >= mem);
 	setFlag(cpu, Z, cpu->y == mem);
 	setFlag(cpu, N, (cpu->y - mem) & 0x80);
@@ -311,8 +351,8 @@ void CPY(cpu6502 *cpu) {
 
 // Increments and Decrements
 void INC(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr) + 1;
-	write_mem(cpu, cpu->addr, mem);
+	uint8_t mem = read_cpu(cpu, cpu->addr) + 1;
+	write_cpu(cpu, cpu->addr, mem);
 	setFlag(cpu, Z, mem == 0x00);
 	setFlag(cpu, N, mem & 0x80);
 
@@ -331,8 +371,8 @@ void INY(cpu6502 *cpu) {
 }
 
 void DEC(cpu6502 *cpu) {
-	uint8_t mem = read_mem(cpu, cpu->addr) - 1;
-	write_mem(cpu, cpu->addr, mem);
+	uint8_t mem = read_cpu(cpu, cpu->addr) - 1;
+	write_cpu(cpu, cpu->addr, mem);
 	setFlag(cpu, Z, mem == 0x00);
 	setFlag(cpu, N, mem & 0x80);
 
@@ -359,12 +399,12 @@ void ASL(cpu6502 *cpu) {
 		setFlag(cpu, N, cpu->a & 0x80);
 	}
 	else {
-		uint8_t mem = read_mem(cpu, cpu->addr);
+		uint8_t mem = read_cpu(cpu, cpu->addr);
 		setFlag(cpu, C, mem & 0x80);
 		mem = mem << 1;
 		setFlag(cpu, Z, mem == 0x00);
 		setFlag(cpu, N, mem & 0x80);
-		write_mem(cpu, cpu->addr, mem);	
+		write_cpu(cpu, cpu->addr, mem);	
 	}
 }
 
@@ -376,12 +416,12 @@ void LSR(cpu6502 *cpu) {
 		setFlag(cpu, N, cpu->a & 0x80);
 	}
 	else {
-		uint8_t mem = read_mem(cpu, cpu->addr);
+		uint8_t mem = read_cpu(cpu, cpu->addr);
 		setFlag(cpu, C, mem & 0x01);
 		mem = mem >> 1;
 		setFlag(cpu, Z, mem == 0x00);
 		setFlag(cpu, N, mem & 0x80);
-		write_mem(cpu, cpu->addr, mem);	
+		write_cpu(cpu, cpu->addr, mem);	
 	}
 }
 
@@ -395,14 +435,14 @@ void ROL(cpu6502 *cpu) {
 		setFlag(cpu, N, cpu->a & 0x80);
 	}
 	else {
-		uint8_t mem = read_mem(cpu, cpu->addr);
+		uint8_t mem = read_cpu(cpu, cpu->addr);
 		uint8_t carry = getFlag(cpu, C);
 		setFlag(cpu, C, mem & 0x80);
 		mem = mem << 1;
 		mem |= carry;
 		setFlag(cpu, Z, mem == 0x00);
 		setFlag(cpu, N, mem & 0x80);
-		write_mem(cpu, cpu->addr, mem);	
+		write_cpu(cpu, cpu->addr, mem);	
 	}
 }
 
@@ -416,14 +456,14 @@ void ROR(cpu6502 *cpu) {
 		setFlag(cpu, N, cpu->a & 0x80);
 	}
 	else {
-		uint8_t mem = read_mem(cpu, cpu->addr);
+		uint8_t mem = read_cpu(cpu, cpu->addr);
 		uint8_t carry = getFlag(cpu, C);
 		setFlag(cpu, C, mem & 0x01);
 		mem = mem >> 1;
 		mem |= (carry << 7);
 		setFlag(cpu, Z, mem == 0x00);
 		setFlag(cpu, N, mem & 0x80);
-		write_mem(cpu, cpu->addr, mem);	
+		write_cpu(cpu, cpu->addr, mem);	
 	}
 }
 
@@ -434,14 +474,14 @@ void JMP(cpu6502 *cpu) {
 
 void JSR(cpu6502 *cpu) {
 	cpu->pc--;
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->pc >> 8);
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->pc & 0x00FF);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->pc >> 8);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->pc & 0x00FF);
 	cpu->pc = cpu->addr;
 }
 
 void RTS(cpu6502 *cpu) {
-	uint16_t lo = read_mem(cpu, STACK_START + ++cpu->sp);
-	uint16_t hi = read_mem(cpu, STACK_START + ++cpu->sp);
+	uint16_t lo = read_cpu(cpu, STACK_START + ++cpu->sp);
+	uint16_t hi = read_cpu(cpu, STACK_START + ++cpu->sp);
 	cpu->pc = ((hi << 8) | lo) + 1;
 }
 
@@ -563,14 +603,14 @@ void SEI(cpu6502 *cpu) {
 // System Functions
 void BRK(cpu6502 *cpu) {
 	cpu->pc++; // Break instruction is 2 bytes so increment pc by 1 byte
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->pc >> 8);
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->pc & 0x00FF);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->pc >> 8);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->pc & 0x00FF);
 	setFlag(cpu, B, 1);
-	write_mem(cpu, STACK_START + cpu->sp--, cpu->sr);
+	write_cpu(cpu, STACK_START + cpu->sp--, cpu->sr);
 	setFlag(cpu, B, 0);
 
-	uint16_t lo = read_mem(cpu, 0xFFFE);
-	uint16_t hi = read_mem(cpu, 0xFFFF);
+	uint16_t lo = read_cpu(cpu, 0xFFFE);
+	uint16_t hi = read_cpu(cpu, 0xFFFF);
 	cpu->pc = (hi << 8) | lo;
 	setFlag(cpu, I, 1);
 }
@@ -578,10 +618,10 @@ void NOP(cpu6502 *cpu) {
 	
 }
 void RTI(cpu6502 *cpu) {
-	cpu->sr = read_mem(cpu, STACK_START + ++cpu->sp);
+	cpu->sr = read_cpu(cpu, STACK_START + ++cpu->sp);
 	setFlag(cpu, U, 1);
-	uint16_t lo = read_mem(cpu, STACK_START + ++cpu->sp);
-	uint16_t hi = read_mem(cpu, STACK_START + ++ cpu->sp);
+	uint16_t lo = read_cpu(cpu, STACK_START + ++cpu->sp);
+	uint16_t hi = read_cpu(cpu, STACK_START + ++ cpu->sp);
 	cpu->pc = (hi << 8) | lo;
 }
 
@@ -592,17 +632,17 @@ void XXX(cpu6502 *cpu) {
 void initialize_cpu(cpu6502 *cpu) {
 	cpu->cycles = 0;
 	cpu->a = cpu->x = cpu->y = 0;
-	cpu->sr = 0x24;
+	cpu->sr = 0x34;
 	cpu->sp = 0xFD;
-	uint16_t lo = cpu->memory[0xFFFC];
-	uint16_t hi = cpu->memory[0xFFFD];
+	uint16_t lo = read_cpu(cpu, 0xFFFC);
+	uint16_t hi = read_cpu(cpu, 0xFFFD);
 	cpu->pc = (hi << 8) | lo;
 	cpu->cycles_t = 0;
 }
 
 void clock_cycle(cpu6502 *cpu) {
 	if(cpu->cycles == 0) {
-		uint8_t opcode = read_mem(cpu, cpu->pc++);
+		uint8_t opcode = read_cpu(cpu, cpu->pc++);
 		cpu->instruction = &instructionLookup[opcode];
 		cpu->instruction->mode(cpu);
 		cpu->instruction->instruction(cpu);

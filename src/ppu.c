@@ -1,16 +1,73 @@
 #include "ppu.h"
 
-uint8_t read_vram(ppu2C02 *ppu, uint16_t addr) {
+uint8_t get_fine_y(ppu2C02 *ppu) {
+	return (ppu->vramaddr >> 12) & 0x7;
+}
 
-	//TODO MAKE THIS BETTER
+uint8_t get_coarse_y(ppu2C02 *ppu) {
+	return (ppu->vramaddr >> 5) & 0x1F;
+}
+
+uint8_t get_fine_x(ppu2C02 *ppu) {
+	return ppu->fine_xscroll;
+}
+
+uint8_t get_coarse_x(ppu2C02 *ppu) {
+	return ppu->vramaddr & 0x1F;
+}
+
+void coarse_x_increment(ppu2C02 *ppu) {
+	if((ppu->vramaddr & 0x001F) == 31) {
+		ppu->vramaddr &= ~0x001F;
+		ppu->vramaddr ^= 0x0400;
+	}
+	else {
+		ppu->vramaddr += 1;
+	}
+}
+
+void fine_y_increment(ppu2C02 *ppu) {
+	if((ppu->vramaddr & 0x7000) != 0x7000) {
+		ppu->vramaddr += 0x1000;
+	}
+	else {
+		ppu->vramaddr &= ~0x7000;
+		uint16_t y = (ppu->vramaddr & 0x03E0) >> 5;
+		if(y == 29) {
+			y = 0;
+			ppu->vramaddr ^= 0x0800;
+		}
+		else if(y == 31) {
+			y = 0;
+		}
+		else {
+			y += 1;
+		}
+		ppu->vramaddr = (ppu->vramaddr & ~0x03E0) | (y << 5);
+	}
+}
+
+uint8_t read_palette(ppu2C02 *ppu, uint16_t addr) {
+	addr = addr - 0x3F00;
+	if(addr >= 0x10 && (addr & 4) == 1) {
+		addr = addr - 0x10;
+	}
+	return ppu->palettes[addr];
+}
+
+void increment_vram(ppu2C02 *ppu) {
+	if((ppu->render_state == PRE_RENDERING || ppu->render_state == RENDERING) && ppu->rendering) {
+		coarse_x_increment(ppu);
+		fine_y_increment(ppu);
+	}
+	else {
+		ppu->vramaddr += ppu->flags->vramaddr_increment;	
+	}
+}
+uint8_t read_ppu(ppu2C02 *ppu, uint16_t addr) {
+
 	addr &= 0x3FFF; // mirroring
-	if (addr < 0x2000) {
-		return ppu->chr_rom[addr];
-	}
-	if (addr < 0x4000) {
-		 return read_nametable(ppu, addr);
-	}
-	return -1;
+	return mapper_read_ppu(ppu->mapper, addr);
 }
 void set_ppuctrl(ppu2C02 *ppu, uint8_t data) {
 	// TODO: Implement correct nmi and vbl logic
@@ -36,6 +93,8 @@ void set_ppumask(ppu2C02 *ppu, uint8_t data) {
 	ppu->flags->emph_red = (ppu->mask & 0x20) == 0x20;
 	ppu->flags->emph_green = (ppu->mask & 0x40) == 0x40;
 	ppu->flags->emph_blue = (ppu->mask & 0x80) == 0x80;
+	ppu->rendering = ppu->flags->show_bg || ppu->flags->show_sprites;
+
 }
 
 uint8_t get_ppustatus(ppu2C02 *ppu) {
@@ -93,11 +152,48 @@ void set_ppuaddr(ppu2C02 *ppu, uint8_t data) {
 uint8_t get_ppudata(ppu2C02 *ppu) {
 	uint16_t addr = ppu->vramaddr & 0x3FFF; // mirrored cpu memory
 	uint8_t return_value = ppu->buffer;
-	ppu->buffer = read_vram(ppu, addr);
+	ppu->buffer = read_ppu(ppu, addr);
 
 	if(addr >= 0x3F00)
 		return_value = read_palette(ppu, addr);
 
 	increment_vram(ppu);
 	return return_value;
+}
+
+void get_bg_tiles(ppu2C02 *ppu) {
+	switch(ppu->tile_cycle) {
+		case 0:
+			ppu->nt_tile_address = (ppu->vramaddr & 0x00FF); // latch first 8 bits
+
+		case 1:
+			ppu->nt_tile_address |= (0x2000 | (ppu->vramaddr & 0x0F00)); // upper 6 bits not latched during cycle 0
+			ppu->tile_index = mapper_read_ppu(ppu->mapper, ppu->nt_tile_address);
+
+		case 2:
+			ppu->attribute_address = 0x00C0 |
+			 						 ((ppu->vramaddr >> 4) & 0x0038) | 
+			 						 ((ppu->vramaddr >> 2) & 0x0007); // latch first 8 bits
+
+		case 3:
+			ppu->attribute_address |= (0x2300 | (ppu->vramaddr & 0x0C00)); // upper 6 bits not latched during cycle 2
+			ppu->attribute = mapper_read_ppu(ppu->mapper, ppu->attribute_address);
+
+		case 4:
+			ppu->pattern_low_address = ((ppu->tile_index & 0x0F) << 4) | get_fine_y(ppu); // latch first 8 bits
+
+		case 5:
+			ppu->pattern_low_address |= ppu->flags->bg_pattern | ((ppu->tile_index & 0xF0) << 4); // upper 6 bits not latched during cycle 4
+			ppu->pattern_low = mapper_read_ppu(ppu->mapper, ppu->pattern_low_address);
+
+		case 6:
+			ppu->pattern_high_address = ((ppu->tile_index & 0x0F) << 4) | get_fine_y(ppu) | 0x0008; // latch first 8 bits
+
+		case 7:
+			ppu->pattern_high_address |= ppu->flags->bg_pattern | ((ppu->tile_index & 0xF0) << 4); // upper 6 bits not latched during cycle 6
+			ppu->pattern_high = mapper_read_ppu(ppu->mapper, ppu->pattern_high_address);		
+	}
+}
+void initialize_ppu(ppu2C02 *ppu) {
+	;
 }

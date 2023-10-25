@@ -59,6 +59,9 @@ struct mapper *init_nrom(nrom *nrom, cartridge *cart, FILE *rom) {
 
 
 uint8_t nrom_read_cpu(nrom *nrom, uint16_t addr) {
+	if(addr < 0x6000) {
+		return 0;
+	}
 	if(addr < 0x8000) {
 		addr -= 0x6000;
 		return nrom->prg_ram[addr];

@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include "mapper.h"
 
 #define STACK_START 0x100
 #define NIL_OP {XXX, IMP, 0}
@@ -34,6 +35,8 @@ typedef struct {
 	uint8_t x;
 	uint8_t y;
 
+	uint8_t internal_ram[0x800];
+	struct mapper *mapper;
 	uint8_t memory[0x10000];
 	struct Instruction *instruction;
 } cpu6502;
@@ -44,8 +47,13 @@ struct Instruction{
 	uint8_t cycles;
 };
 
-uint16_t read_mem_meme(cpu6502 *cpu, uint16_t addr);
-void write_mem_mem(cpu6502 *cpu, uint16_t addr, uint8_t data);
+uint8_t read_ppuflags(cpu6502 *cpu, uint16_t addr);
+uint8_t read_apuflags(cpu6502 *cpu, uint16_t addr);
+void write_ppuflags(cpu6502 *cpu, uint16_t addr, uint8_t data);
+void write_apuflags(cpu6502 *cpu, uint16_t addr, uint8_t data);
+
+uint8_t read_cpu(cpu6502 *cpu, uint16_t addr);
+void write_cpu(cpu6502 *cpu, uint16_t addr, uint8_t data);
 
 void setFlag(cpu6502 *cpu, ProcessorStatus f, bool b);
 uint8_t getFlag(cpu6502 *cpu, ProcessorStatus f);
